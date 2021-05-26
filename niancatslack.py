@@ -60,5 +60,36 @@ def handle_message_events(body, logger, say: Say):
     except Exception as e:
         print(f"Message command exception: {e}")
 
-if __name__ == "__main__":
-    SocketModeHandler(app, app_token).start()
+socket_mode_handler = SocketModeHandler(app, app_token)
+
+#
+# FastAPI notification handler
+#
+
+from fastapi import FastAPI, Request
+
+api = FastAPI()
+
+@api.get("/")
+async def root():
+    return {"message": "Hello World"}
+
+@api.post("/notification")
+async def post_notification(request: Request):
+    print("### NOTIFICATION:")
+    binarybody = await request.body()
+    body = binarybody.decode("UTF-8")
+    print(body)
+    print("### END NOTIFICATION")
+    app.client.chat_postMessage(channel=notification_channel, text=body)
+    return ""
+
+@api.on_event("startup")
+def startup_event():
+    print("### APPLICATION STARTUP EVENT")
+    socket_mode_handler.connect()
+
+@api.on_event("shutdown")
+def shutdown_event():
+    print("### APPLICATION SHUTDOWN EVENT")
+    socket_mode_handler.close()
