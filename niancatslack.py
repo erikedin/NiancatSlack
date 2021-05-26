@@ -1,7 +1,10 @@
 import os
 import os.path
-import requests
+import sys
 import pprint
+
+import requests
+from dotenv import dotenv_values
 
 from slack_bolt import App, Say
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -13,8 +16,17 @@ def read_token(token_name):
         token_contents = token_file.read()
         return token_contents.strip()
 
-bot_token = read_token(os.environ.get("SLACK_BOT_TOKEN_NAME", "niancat.token"))
-app_token = read_token(os.environ.get("SLACK_APP_TOKEN_NAME", "niancat.app-token"))
+config = dotenv_values(".env")
+bot_token = read_token(config.get("SLACK_BOT_TOKEN_NAME", "niancat.token"))
+app_token = read_token(config.get("SLACK_APP_TOKEN_NAME", "niancat.app-token"))
+
+try:
+    notification_channel = config["NIANCAT_NOTIFICATION_CHANNEL"]
+except KeyError:
+    print("Configuration variable NIANCAT_NOTIFICATION_CHANNEL not set in .env!")
+    print("It must be set to the name of the channel to which notification messages should go.")
+    print()
+    sys.exit(1)
 
 class NiancatAdapter:
     def __init__(self, url, team):
@@ -32,21 +44,9 @@ class NiancatAdapter:
 
 app = App(token=bot_token)
 niancat = NiancatAdapter("http://localhost:8000", "defaultteam")
+
+# For debug printing of messages and such
 pp = pprint.PrettyPrinter(indent=4)
-
-@app.command("/hello-socket-mode")
-def hello_command(ack, body):
-    user_id = body["user_id"]
-    ack(f"Hi, <@{user_id}>!")
-
-@app.event("app_mention")
-def event_test(say):
-    say("Hi there!")
-
-@app.message(":wave:")
-def say_hello(message, say):
-    user = message['user']
-    say(f"Hi there, <@{user}>!")
 
 @app.event("message")
 def handle_message_events(body, logger, say: Say):
