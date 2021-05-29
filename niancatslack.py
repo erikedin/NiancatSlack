@@ -28,6 +28,14 @@ except KeyError:
     print()
     sys.exit(1)
 
+try:
+    notification_endpoint = config["NIANCAT_NOTIFICATION_ENDPOINT"]
+except KeyError:
+    print("Configuration variable NIANCAT_NOTIFICATION_ENDPOINT not set in .env!")
+    print("It must be set to the URL where this bot receives notifications")
+    print()
+    sys.exit(1)
+
 class NiancatAdapter:
     def __init__(self, url, team):
         self.url = url
@@ -35,12 +43,20 @@ class NiancatAdapter:
     
     def command_url(self):
         return os.path.join(self.url, "command")
-    
+
+    def endpoint_url(self):
+        return os.path.join(self.url, "team", self.team, "endpoint")
+
     def post_command(self, user, command_text):
         payload = {"team": self.team, "user": user, "command": command_text}
         r = requests.post(self.command_url(), json=payload)
         r.raise_for_status()
         return r.text
+
+    def update_endpoint(self, endpoint):
+        payload = {"uri": endpoint}
+        r = requests.put(self.endpoint_url(), json=payload)
+        r.raise_for_status()
 
 app = App(token=bot_token)
 niancat = NiancatAdapter("http://localhost:8000", "defaultteam")
@@ -87,6 +103,7 @@ async def post_notification(request: Request):
 @api.on_event("startup")
 def startup_event():
     print("### APPLICATION STARTUP EVENT")
+    niancat.update_endpoint(notification_endpoint)
     socket_mode_handler.connect()
 
 @api.on_event("shutdown")
