@@ -47,6 +47,9 @@ class NiancatAdapter:
     def endpoint_url(self):
         return os.path.join(self.url, "team", self.team, "endpoint")
 
+    def user_url(self, user_id: str) -> str:
+        return os.path.join(self.url, "user", self.team, user_id)
+
     def post_command(self, user, command_text):
         payload = {"team": self.team, "user": user, "command": command_text}
         r = requests.post(self.command_url(), json=payload)
@@ -58,11 +61,28 @@ class NiancatAdapter:
         r = requests.put(self.endpoint_url(), json=payload)
         r.raise_for_status()
 
+    def update_displayname(self, user_id: str, display_name: str):
+        payload = {"display_name": display_name}
+        r = requests.put(self.user_url(user_id), json=payload)
+
+    def update_displayname_from_slack(self, user: dict):
+        user_id = user["id"]
+        display_name = user["profile"]["display_name"]
+
+        # Display names are empty by default, so use real_name instead.
+        if display_name == "":
+            display_name = user["profile"]["real_name"]
+
+        print(f"User {user} with {user_id} and {display_name}")
+        self.update_displayname(user_id, display_name)
+
+
 app = App(token=bot_token)
 niancat = NiancatAdapter("http://localhost:8000", "defaultteam")
 
 # For debug printing of messages and such
 pp = pprint.PrettyPrinter(indent=4)
+
 
 @app.event("message")
 def handle_message_events(body, logger, say: Say):
@@ -72,9 +92,35 @@ def handle_message_events(body, logger, say: Say):
         user = body['event']['user']
         command = body['event']['text']
         response = niancat.post_command(user, command)
+        logger.info(f"## RESPONSE: {response}")
         say(response)
     except Exception as e:
         print(f"Message command exception: {e}")
+
+
+@app.event("team_join")
+def team_join(event):
+    logging.info(f"Team join event: {event}")
+    user = event["user"]
+    niancat.update_displayname_from_slack(user)
+
+
+@app.event("user_change")
+def user_change(event):
+    logging.info(f"User change event: {event}")
+    user = event["user"]
+    niancat.update_displayname_from_slack(user)
+
+
+def list_users():
+    results = app.client.users_list()
+    if not results["ok"]:
+        logging.error(f"User list failed: {results}")
+        return
+
+    users = results["members"]
+    for user in users:
+        niancat.update_displayname_from_slack(user)
 
 socket_mode_handler = SocketModeHandler(app, app_token)
 
@@ -105,6 +151,7 @@ def startup_event():
     print("### APPLICATION STARTUP EVENT")
     niancat.update_endpoint(notification_endpoint)
     socket_mode_handler.connect()
+    list_users()
 
 @api.on_event("shutdown")
 def shutdown_event():
